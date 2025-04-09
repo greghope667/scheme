@@ -1,0 +1,305 @@
+const std = @import("std");
+const assert = std.debug.assert;
+
+const sxi = @import("sxi.zig");
+const SXI = sxi.SXI;
+const Opcode = sxi.Opcode;
+const OpcodeInt = sxi.OpcodeInt;
+const allocator = sxi.allocator;
+
+const gc = @import("gc.zig");
+
+const IP = [*]OpcodeInt;
+const Env = *sxi.Environment;
+
+const EvalError = error{
+    NotDefined,
+    NotCallable,
+    OutOfMemory,
+    NotImplemented,
+    InvalidArguments,
+};
+const Err = EvalError;
+
+pub const Continuation = struct {
+    code: *sxi.Code,
+    return_address: IP,
+    stack: *sxi.Vector,
+    stack_used: usize,
+    stack_limit: usize,
+    environment: Env,
+    next: *Continuation,
+};
+
+//pub const Opcode = enum(OI) {
+//    0 allocate_stack,
+//    1 lookup_callable,
+//    2 lookup_variable,
+//    3 call,
+//    4 tailcall,
+//    5 literal,
+//    6 ret,
+//    7 branch,
+//    8 branch0,
+//    9 push,
+//   10 define,
+//   11 exit,
+//   12 lambda,
+//   13 push_callable,
+//};
+
+inline fn fetch(ip: IP) Opcode {
+    //std.debug.print("{*} {}\n", .{ ip, ip[0] });
+    return @enumFromInt(ip[0]);
+}
+
+pub const Function = *const fn ([]SXI) Err!SXI;
+
+fn as_int(value: SXI) Err!isize {
+    return switch (value) {
+        .integer => |i| i,
+        else => Err.InvalidArguments,
+    };
+}
+
+fn plus(args: []SXI) Err!SXI {
+    var total: isize = 0;
+    for (args) |a| {
+        total += try as_int(a);
+    }
+    return sxi.wrap(total);
+}
+
+fn sub(args: []SXI) Err!SXI {
+    return switch (args.len) {
+        0 => Err.InvalidArguments,
+        1 => sxi.wrap(-try as_int(args[0])),
+        else => {
+            var total: isize = try as_int(args[0]);
+            for (args[1..]) |a| {
+                total -= try as_int(a);
+            }
+            return sxi.wrap(total);
+        },
+    };
+}
+
+fn less(args: []SXI) Err!SXI {
+    return switch (args.len) {
+        0 => sxi.c_true,
+        else => {
+            var largest = try as_int(args[0]);
+            for (args[1..]) |a| {
+                const i = try as_int(a);
+                if (largest < i) {
+                    largest = i;
+                } else {
+                    return sxi.c_false;
+                }
+            }
+            return sxi.c_true;
+        },
+    };
+}
+
+pub fn make_root_environment() Env {
+    const env = gc.make_environment(null);
+    env.define(gc.make_symbol("+"), sxi.wrap(&plus));
+    env.define(gc.make_symbol("-"), sxi.wrap(&sub));
+    env.define(gc.make_symbol("<"), sxi.wrap(&less));
+    return env;
+}
+
+fn bind_lambda(l: *sxi.Lambda, args: []SXI) Err!Env {
+    if (l.arguments.names.len != args.len) {
+        return Err.InvalidArguments;
+    }
+
+    const env = gc.make_environment(l.capture);
+    //try env.entries.resize(allocator, args.len);
+    env.entries.items = try allocator.alloc(sxi.Environment.Entry, args.len);
+    env.entries.capacity = args.len;
+
+    for (env.entries.items, 0..) |*entry, i| {
+        entry.* = .{ .name = l.arguments.names[i], .value = args[i] };
+    }
+    return env;
+}
+
+fn eval_(code_: *sxi.Code, cont_: *sxi.Continuation, env_: Env) Err!SXI {
+    var code = code_;
+    var cont = cont_;
+    var env = env_;
+    var tos = sxi.c_void;
+    var stack: *sxi.Vector = gc.make_vector();
+    var ip: IP = @ptrCast(&code.instructions[0]);
+
+    next: switch (fetch(ip)) {
+        .allocate_stack => {
+            const limit = ip[1];
+            stack = gc.make_vector();
+
+            // These are MUCH slower, need to investigate why (type erasure of allocator?)
+            //try stack.data.ensureTotalCapacity(allocator, limit);
+            //stack.data = try .initCapacity(allocator, limit);
+            stack.data.items = try allocator.alloc(SXI, limit);
+            stack.data.items.len = 0;
+            stack.data.capacity = limit;
+
+            ip += 2;
+            continue :next fetch(ip);
+        },
+
+        .allocate_cont => {
+            const next_cont = gc.make(.continuation);
+            next_cont.* = .{
+                .code = code,
+                .stack = stack,
+                .return_address = undefined,
+                .stack_used = stack.data.items.len,
+                .stack_limit = stack.data.capacity,
+                .environment = env,
+                .next = cont,
+            };
+            cont = next_cont;
+            ip += 1;
+            continue :next fetch(ip);
+        },
+
+        .ret => {
+            if (gc.allocation_counter > 4096) {
+                @branchHint(.unlikely);
+                @call(.never_inline, gc.run, .{&[2]SXI{ sxi.wrap(cont), tos }});
+            }
+
+            code = cont.code;
+            stack = cont.stack;
+            ip = cont.return_address;
+            env = cont.environment;
+            cont = cont.next;
+            continue :next fetch(ip);
+        },
+
+        .call => {
+            cont.return_address = ip + 1;
+            continue :next .tailcall;
+        },
+
+        .tailcall => {
+            const caller_args = stack.data.items[1..];
+            switch (stack.data.items[0]) {
+                .lambda => |l| {
+                    env = try @call(.auto, bind_lambda, .{ l, caller_args });
+                    code = l.code;
+                    ip = @ptrCast(&code.instructions[0]);
+
+                    continue :next fetch(ip);
+                },
+
+                .function => |f| {
+                    tos = try f(caller_args);
+                    continue :next .ret;
+                },
+
+                else => {
+                    //std.debug.print("Cannot call: {s}\n", .{@tagName(tag)});
+                    return Err.NotCallable;
+                },
+            }
+        },
+
+        .push_callable, .push => {
+            stack.data.appendAssumeCapacity(tos);
+            ip += 1;
+            continue :next fetch(ip);
+        },
+
+        .literal => {
+            tos = code.literals[ip[1]];
+            ip += 2;
+            continue :next fetch(ip);
+        },
+
+        .exit => {
+            return tos;
+        },
+
+        .lookup_variable => {
+            tos = env.lookup(code.symbols[ip[1]]) orelse {
+                //std.debug.print("Not defined: {s}\n", .{code.symbols[ip[1]].data()});
+                return Err.NotDefined;
+            };
+            ip += 2;
+            continue :next fetch(ip);
+        },
+
+        .lookup_callable => {
+            tos = env.lookup(code.symbols[ip[1]]) orelse {
+                //std.debug.print("Not defined: {s}\n", .{code.symbols[ip[1]].data()});
+                return Err.NotDefined;
+            };
+            stack.data.appendAssumeCapacity(tos);
+            ip += 2;
+            continue :next fetch(ip);
+        },
+
+        .define => {
+            env.define(code.symbols[ip[1]], tos);
+            ip += 2;
+            continue :next fetch(ip);
+        },
+
+        .branch => {
+            ip += ip[1];
+            continue :next fetch(ip);
+        },
+
+        .branch0 => {
+            ip += if (tos.eq(sxi.c_false)) ip[1] else 2;
+            continue :next fetch(ip);
+        },
+
+        .lambda => {
+            const lambda = gc.make(sxi.Tag.lambda);
+            lambda.* = .{
+                .capture = env,
+                .arguments = code.literals[ip[1]].formals,
+                .code = code.literals[ip[1] + 1].code,
+            };
+            tos = sxi.wrap(lambda);
+            ip += 2;
+            continue :next fetch(ip);
+        },
+
+        //else => |tag| {
+        //    std.debug.print("Not implemented: {: >4}: {s}\n", .{ ip - @as(IP, @ptrCast(&code.instructions[0])), @tagName(tag) });
+        //    return Err.NotImplemented;
+        //},
+    }
+}
+
+pub fn evaluate(code: *sxi.Code, env: Env) Err!SXI {
+    const thunk = gc.make(.code);
+
+    const exit = try allocator.alloc(OpcodeInt, 1);
+    exit[0] = @intFromEnum(Opcode.exit);
+
+    thunk.* = .{
+        .instructions = exit,
+        .symbols = &.{},
+        .literals = &.{},
+    };
+
+    const cont = gc.make(.continuation);
+    cont.* = .{
+        .code = thunk,
+        .return_address = @ptrCast(&exit[0]),
+        .stack = gc.make_vector(),
+        .stack_used = 0,
+        .stack_limit = 0,
+        .environment = env,
+        .next = cont,
+    };
+
+    return @call(.never_inline, eval_, .{ code, cont, env });
+}

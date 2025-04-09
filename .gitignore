@@ -1,0 +1,13 @@
+# Build files
+.zig-cache/
+zig-out
+
+# Profiler files
+perf.data*
+callgrind.out.*
+
+# Sample input data files (for debugging)
+inputs/
+
+# Random note files
+notes/
