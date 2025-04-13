@@ -64,13 +64,13 @@ const Token = union(TokenTag) {
 fn isident(ch: u8) bool {
     const cases = comptime blk: {
         var c: [128]bool = @splat(false);
-        for ('a'..'z') |i| {
+        for ('a'..'z' + 1) |i| {
             c[i] = true;
         }
-        for ('A'..'Z') |i| {
+        for ('A'..'Z' + 1) |i| {
             c[i] = true;
         }
-        for ('0'..'9') |i| {
+        for ('0'..'9' + 1) |i| {
             c[i] = true;
         }
         for ("!$%&*+-./:<=>?@^_~") |i| {

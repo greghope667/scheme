@@ -153,7 +153,7 @@ fn flatten_list(list: *sxi.Pair) CompileError![]SXI {
     return arr;
 }
 
-fn compile_(expr: SXI, code: *CodeBuilder, is_tail: bool) CompileError!void {
+fn compile_expr(expr: SXI, code: *CodeBuilder, is_tail: bool) CompileError!void {
     return switch (expr) {
         .pair => |p| compile_list(try flatten_list(p), code, is_tail),
         .symbol => |s| compile_symbol(s, code, is_tail),
@@ -224,7 +224,7 @@ pub fn compile(expr: SXI) CompileError!*sxi.Code {
     _ = arena.reset(.retain_capacity);
     var code: CodeBuilder = .empty;
     errdefer code.deinit();
-    try compile_(expr, &code, true);
+    try compile_expr(expr, &code, true);
     return code.to_owned();
 }
 
@@ -241,12 +241,12 @@ fn compile_if(form: []SXI, code: *CodeBuilder, is_tail: bool) CompileError!void 
         else => return CompileError.SyntaxError,
     };
     // Conditional
-    try compile_(form[1], code, false);
+    try compile_expr(form[1], code, false);
     try code.append(.{ Opcode.branch0, std.math.maxInt(OI) });
     const branch0_from = code.code.items.len - 1;
 
     // True case
-    try compile_(form[2], code, is_tail);
+    try compile_expr(form[2], code, is_tail);
     if (!is_tail) {
         try code.append(.{ Opcode.branch, std.math.maxInt(OI) });
     }
@@ -255,7 +255,7 @@ fn compile_if(form: []SXI, code: *CodeBuilder, is_tail: bool) CompileError!void 
     // False case
     code.code.items[branch0_from] = @intCast(code.code.items.len - branch0_from + 1);
     if (has_else_form) {
-        try compile_(form[3], code, is_tail);
+        try compile_expr(form[3], code, is_tail);
     } else {
         try compile_literal(sxi.c_void, code, is_tail);
     }
@@ -266,15 +266,21 @@ fn compile_if(form: []SXI, code: *CodeBuilder, is_tail: bool) CompileError!void 
 }
 
 fn compile_define(form: []SXI, code: *CodeBuilder, is_tail: bool) CompileError!void {
-    if (form.len != 3) {
-        return CompileError.SyntaxError;
+    var name = sxi.c_void;
+
+    if (form.len >= 2 and form[1] == .pair) {
+        // (define (name . args) . body) -> (define name (lambda args . body))
+        name = form[1].pair.first;
+        form[1] = form[1].pair.second;
+        try compile_lambda(form, code, false);
+    } else if (form.len == 3) {
+        // (define name expr)
+        name = form[1];
+        try compile_expr(form[2], code, false);
     }
 
-    switch (form[1]) {
-        .symbol => |s| {
-            try compile_(form[2], code, false);
-            try code.append(.{ Opcode.define, s });
-        },
+    switch (name) {
+        .symbol => |s| try code.append(.{ Opcode.define, s }),
         else => return CompileError.SyntaxError,
     }
 
@@ -319,7 +325,7 @@ fn parse_formals(expr: SXI) CompileError!*sxi.Formals {
 }
 
 fn compile_lambda(form: []SXI, code: *CodeBuilder, is_tail: bool) CompileError!void {
-    if (form.len < 2) {
+    if (form.len < 3) {
         return CompileError.SyntaxError;
     }
 
@@ -343,9 +349,9 @@ fn compile_begin(form: []SXI, code: *CodeBuilder, is_tail: bool) CompileError!vo
         return compile_literal(sxi.c_void, code, is_tail);
     }
     for (form[1 .. form.len - 1]) |expr| {
-        try compile_(expr, code, false);
+        try compile_expr(expr, code, false);
     }
-    try compile_(form[form.len - 1], code, is_tail);
+    try compile_expr(form[form.len - 1], code, is_tail);
 }
 
 fn compile_quote(form: []SXI, code: *CodeBuilder, is_tail: bool) CompileError!void {
