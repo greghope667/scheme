@@ -188,7 +188,7 @@ fn compile_list(list: []SXI, code: *CodeBuilder, is_tail: bool) CompileError!voi
             try code.append_opc(Opcode.push_callable);
         },
         .symbol => |s| code.append(.{ Opcode.lookup_callable, s }),
-        .function, .lambda => code.append(.{ Opcode.literal, list[0], Opcode.push }),
+        .function_1, .function_n, .lambda => code.append(.{ Opcode.literal, list[0], Opcode.push }),
         else => return CompileError.ValueNotCallable,
     };
 

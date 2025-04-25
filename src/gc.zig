@@ -238,7 +238,7 @@ fn deallocate(x: anytype) void {
 var roots: std.ArrayListUnmanaged(SXI) = .empty;
 
 pub fn protect(root: SXI) void {
-    roots.append(allocator, root);
+    roots.append(allocator, root) catch @panic("allocation error");
 }
 
 pub fn run(extra_roots: []const SXI) void {

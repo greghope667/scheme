@@ -11,7 +11,8 @@ pub fn panic(message: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noretu
 
 pub fn main() !void {
     //const env = sxi.gc.make_environment(null);
-    const env = @import("eval.zig").make_root_environment();
+    const env = @import("builtins.zig").make_root_environment();
+    sxi.gc.protect(sxi.wrap(env));
 
     while (true) {
         try std.io.getStdOut().writeAll("\n> ");

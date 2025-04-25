@@ -18,6 +18,8 @@ const EvalError = error{
     OutOfMemory,
     NotImplemented,
     InvalidArguments,
+    Overflow,
+    DivideByZero,
 };
 const Err = EvalError;
 
@@ -51,63 +53,6 @@ pub const Continuation = struct {
 inline fn fetch(ip: IP) Opcode {
     //std.debug.print("{*} {}\n", .{ ip, ip[0] });
     return @enumFromInt(ip[0]);
-}
-
-pub const Function = *const fn ([]SXI) Err!SXI;
-
-fn as_int(value: SXI) Err!isize {
-    return switch (value) {
-        .integer => |i| i,
-        else => Err.InvalidArguments,
-    };
-}
-
-fn plus(args: []SXI) Err!SXI {
-    var total: isize = 0;
-    for (args) |a| {
-        total += try as_int(a);
-    }
-    return sxi.wrap(total);
-}
-
-fn sub(args: []SXI) Err!SXI {
-    return switch (args.len) {
-        0 => Err.InvalidArguments,
-        1 => sxi.wrap(-try as_int(args[0])),
-        else => {
-            var total: isize = try as_int(args[0]);
-            for (args[1..]) |a| {
-                total -= try as_int(a);
-            }
-            return sxi.wrap(total);
-        },
-    };
-}
-
-fn less(args: []SXI) Err!SXI {
-    return switch (args.len) {
-        0 => sxi.c_true,
-        else => {
-            var largest = try as_int(args[0]);
-            for (args[1..]) |a| {
-                const i = try as_int(a);
-                if (largest < i) {
-                    largest = i;
-                } else {
-                    return sxi.c_false;
-                }
-            }
-            return sxi.c_true;
-        },
-    };
-}
-
-pub fn make_root_environment() Env {
-    const env = gc.make_environment(null);
-    env.define(gc.make_symbol("+"), sxi.wrap(&plus));
-    env.define(gc.make_symbol("-"), sxi.wrap(&sub));
-    env.define(gc.make_symbol("<"), sxi.wrap(&less));
-    return env;
 }
 
 fn bind_lambda(l: *sxi.Lambda, args: []SXI) Err!Env {
@@ -196,8 +141,16 @@ fn eval_(code_: *sxi.Code, cont_: *sxi.Continuation, env_: Env) Err!SXI {
                     continue :next fetch(ip);
                 },
 
-                .function => |f| {
+                .function_n => |f| {
                     tos = try f(caller_args);
+                    continue :next .ret;
+                },
+
+                .function_1 => |f| {
+                    if (caller_args.len != 1) {
+                        return Err.InvalidArguments;
+                    }
+                    tos = try f(caller_args[0]);
                     continue :next .ret;
                 },
 

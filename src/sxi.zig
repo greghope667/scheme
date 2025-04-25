@@ -1,9 +1,11 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+pub const gc = @import("gc.zig");
+pub const builtins = @import("builtins.zig");
+
 pub const read = @import("read.zig").read;
 pub const print = @import("print.zig").print;
-pub const gc = @import("gc.zig");
 pub const evaluate = @import("eval.zig").evaluate;
 pub const compile = @import("compile.zig").compile;
 
@@ -14,7 +16,7 @@ pub const allocator: std.mem.Allocator = .{
 
 pub const size_type = u32;
 
-pub const Tag = enum(u8) {
+pub const Tag = enum(usize) {
     // Basic data types
     constant = 0,
     integer,
@@ -26,7 +28,8 @@ pub const Tag = enum(u8) {
     vector,
 
     // Callables
-    function,
+    function_1,
+    function_n,
     //kfunction,
     lambda,
     continuation,
@@ -60,7 +63,8 @@ pub const SXI = union(Tag) {
     pair: *Pair,
     environment: *Environment,
     vector: *Vector,
-    function: @import("eval.zig").Function,
+    function_1: builtins.Function_1,
+    function_n: builtins.Function_n,
     //kfunction,
     lambda: *Lambda,
     continuation: *Continuation,
@@ -177,6 +181,12 @@ pub const Lambda = struct {
 };
 
 pub fn wrap(x: anytype) SXI {
+    switch (@TypeOf(x)) {
+        bool => {
+            return if (x) c_true else c_false;
+        },
+        else => {},
+    }
     const fieldname = comptime blk: {
         for (std.meta.fields(SXI)) |field| {
             if (std.meta.eql(@TypeOf(x), field.type)) {
@@ -186,4 +196,12 @@ pub fn wrap(x: anytype) SXI {
         @compileError("SXI cannot wrap type: " ++ @typeName(@TypeOf(x)));
     };
     return @unionInit(SXI, fieldname, x);
+}
+
+fn as_type(comptime tag: Tag) type {
+    return @FieldType(SXI, @tagName(tag));
+}
+
+pub fn as(comptime tag: Tag, x: SXI) error{InvalidArguments}!@FieldType(SXI, @tagName(tag)) {
+    return if (x == tag) @field(x, @tagName(tag)) else error.InvalidArguments;
 }
