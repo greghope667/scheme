@@ -205,3 +205,9 @@ fn as_type(comptime tag: Tag) type {
 pub fn as(comptime tag: Tag, x: SXI) error{InvalidArguments}!@FieldType(SXI, @tagName(tag)) {
     return if (x == tag) @field(x, @tagName(tag)) else error.InvalidArguments;
 }
+
+pub fn init() void {
+    @import("ports.zig").init_port_handles();
+    @import("read.zig").init_read_symbols();
+    @import("compile.zig").init_compile_symbols();
+}

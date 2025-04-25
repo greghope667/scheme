@@ -10,6 +10,7 @@ pub fn panic(message: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noretu
 }
 
 pub fn main() !void {
+    sxi.init();
     //const env = sxi.gc.make_environment(null);
     const env = @import("builtins.zig").make_root_environment();
     sxi.gc.protect(sxi.wrap(env));

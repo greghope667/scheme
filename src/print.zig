@@ -6,10 +6,8 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Error = anyerror;
 
-const Writer = std.io.BufferedWriter(4096, std.io.AnyWriter);
-const stdout = std.io.getStdOut().writer();
-var buffer = Writer{ .unbuffered_writer = stdout.any() };
-const writer = buffer.writer();
+const stdout = @import("ports.zig").stdout;
+const writer = stdout.writer();
 
 fn print_constant(c: sxi.Constant) Error!void {
     try writer.writeAll(switch (c) {
@@ -67,7 +65,7 @@ fn print_value(value: SXI) Error!void {
 
 pub fn print(value: SXI) Error!void {
     try print_value(value);
-    try buffer.flush();
+    try stdout.flush();
 }
 
 pub fn print_code(c: *sxi.Code) Error!void {
@@ -107,5 +105,5 @@ pub fn print_code(c: *sxi.Code) Error!void {
         }
         try writer.writeByte('\n');
     }
-    try buffer.flush();
+    try stdout.flush();
 }

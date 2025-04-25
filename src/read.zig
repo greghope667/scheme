@@ -4,8 +4,8 @@ const gc = @import("gc.zig");
 
 const std = @import("std");
 const assert = std.debug.assert;
-const Reader = std.io.AnyReader;
 
+var ungetc_buf: ?u8 = null;
 // var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var input_buffer: [4096]u8 = undefined;
 var input_begin: usize = 0;
@@ -14,28 +14,21 @@ var input_end: usize = 0;
 // Read from stdin, returns null on EOF
 // (panics on other errors)
 fn getc() ?u8 {
-    if (input_begin < input_end) {
-        const ch = input_buffer[input_begin];
-        input_begin += 1;
+    if (ungetc_buf) |ch| {
+        ungetc_buf = null;
         return ch;
     } else {
-        input_begin = 0;
-        input_end = std.io.getStdIn().read(&input_buffer) catch @panic("read error");
-        if (input_end > 0) {
-            input_begin = 1;
-            return input_buffer[0];
-        } else {
-            return null;
-        }
+        var ch: u8 = undefined;
+        const n = @import("ports.zig").stdin.read((&ch)[0..1]) catch @panic("read error");
+        return if (n > 0) ch else null;
     }
 }
 
 fn ungetc(ch: u8) void {
-    if (input_begin == 0) {
+    if (ungetc_buf) |_| {
         @panic("ungetc buffer full");
     } else {
-        input_begin -= 1;
-        input_buffer[input_begin] = ch;
+        ungetc_buf = ch;
     }
 }
 
@@ -223,8 +216,6 @@ pub fn read() ReadError!SXI {
 
 var symbol_quote: *sxi.Symbol = undefined;
 
-export const _init_read_symbols linksection(".init_array") = &(struct {
-    fn f() callconv(.C) void {
-        symbol_quote = gc.make_symbol("quote");
-    }
-}.f);
+pub fn init_read_symbols() void {
+    symbol_quote = gc.make_symbol("quote");
+}

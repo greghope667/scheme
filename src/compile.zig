@@ -369,10 +369,8 @@ var special_forms = [_]SpecialForm{
     .{ .name = "quote", .symbol = undefined, .func = compile_quote },
 };
 
-export const _init_compile_symbols linksection(".init_array") = &(struct {
-    fn f() callconv(.C) void {
-        for (&special_forms) |*form| {
-            form.symbol = gc.make_symbol(form.name);
-        }
+pub fn init_compile_symbols() void {
+    for (&special_forms) |*form| {
+        form.symbol = gc.make_symbol(form.name);
     }
-}.f);
+}
