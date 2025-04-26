@@ -14,8 +14,6 @@ pub const allocator: std.mem.Allocator = .{
     .vtable = &@import("allocator.zig").vtable,
 };
 
-pub const size_type = u32;
-
 pub const Tag = enum(usize) {
     // Basic data types
     constant = 0,
@@ -94,11 +92,13 @@ pub fn pair(first: SXI, second: SXI) Pair {
 }
 
 pub const Symbol = extern struct {
-    len: size_type,
-    _data: [1]u8,
+    len: u32,
+    hash: u32 = 0,
+    // data: []u8 trailing
 
     pub fn data(s: *const Symbol) []const u8 {
-        return @as([*]const u8, @ptrCast(&s._data[0]))[0..s.len];
+        const start: [*]const u8 = @as([*]const u8, @ptrCast(s)) + @sizeOf(Symbol);
+        return start[0..s.len];
     }
 };
 
@@ -113,33 +113,35 @@ pub const Formals = struct {
 
 pub const Environment = struct {
     parent: ?*Environment,
-    entries: std.ArrayListUnmanaged(Entry),
+    map: Map,
 
-    pub const Entry = struct {
-        name: *Symbol,
-        value: SXI,
-    };
+    fn key_hash(s: *Symbol) u32 {
+        return s.hash;
+    }
+
+    fn key_eql(l: *Symbol, r: *Symbol) bool {
+        return l == r;
+    }
+
+    pub const Map = @import("hash_map.zig").HashMap(*Symbol, SXI, key_hash, key_eql);
+    pub const Entry = Map.Entry;
 
     const SetError = error{
         NotDefined,
     };
 
     pub fn define(e: *Environment, name: *Symbol, value: SXI) void {
-        for (e.entries.items) |*entry| {
-            if (entry.name == name) {
-                entry.value = value;
-                return;
-            }
+        if (e.map.lookup(name)) |entry| {
+            entry.value = value;
+        } else {
+            e.map.append(allocator, name, value) catch unreachable;
         }
-        e.entries.append(allocator, .{ .name = name, .value = value }) catch unreachable;
     }
 
     pub fn set(e: *Environment, name: *Symbol, value: SXI) SetError!void {
-        for (e.entries.items) |entry| {
-            if (entry.name == name) {
-                entry.value = value;
-                return;
-            }
+        if (e.map.lookup(name)) |entry| {
+            entry.value = value;
+            return;
         }
         if (e.parent) |parent| {
             return parent.set(name, value);
@@ -151,10 +153,8 @@ pub const Environment = struct {
     pub fn lookup(e: *Environment, name: *Symbol) ?SXI {
         var ep = e;
         while (true) {
-            for (ep.entries.items) |entry| {
-                if (entry.name == name) {
-                    return entry.value;
-                }
+            if (ep.map.lookup(name)) |entry| {
+                return entry.value;
             }
             if (ep.parent) |parent| {
                 ep = parent;

@@ -9,6 +9,8 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    module.single_threaded = true;
+    module.strip = false;
 
     const exe = b.addExecutable(.{
         .name = "sxi",

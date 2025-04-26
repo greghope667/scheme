@@ -62,11 +62,11 @@ fn bind_lambda(l: *sxi.Lambda, args: []SXI) Err!Env {
 
     const env = gc.make_environment(l.capture);
     //try env.entries.resize(allocator, args.len);
-    env.entries.items = try allocator.alloc(sxi.Environment.Entry, args.len);
-    env.entries.capacity = args.len;
+    env.map.items = try allocator.alloc(sxi.Environment.Entry, args.len);
+    env.map.capacity = @intCast(args.len);
 
-    for (env.entries.items, 0..) |*entry, i| {
-        entry.* = .{ .name = l.arguments.names[i], .value = args[i] };
+    for (env.map.items, 0..) |*entry, i| {
+        entry.* = .{ .key = l.arguments.names[i], .value = args[i] };
     }
     return env;
 }

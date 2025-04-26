@@ -22,8 +22,11 @@ pub fn make_symbol(name: []const u8) *sxi.Symbol {
     const size = name.len + @sizeOf(sxi.Symbol);
     const ptr = symbol_pool.allocator().alignedAlloc(u8, @alignOf(sxi.Symbol), size) catch @panic("allocation failure");
     var sym: *sxi.Symbol = @ptrCast(ptr);
+
     sym.len = @intCast(name.len);
-    const data = @as([*]u8, @ptrCast(&sym._data[0]))[0..sym.len];
+    sym.hash = @truncate(std.hash.Fnv1a_64.hash(name));
+
+    const data: []u8 = @constCast(sym.data());
     @memcpy(data, name);
 
     // Add to interned pool
@@ -191,7 +194,7 @@ fn sweepChildren(x: anytype) void {
             }
         },
         sxi.Environment => {
-            for (x.entries.items) |entry| {
+            for (x.map.items) |entry| {
                 sweep(entry.value);
             }
         },
@@ -221,7 +224,7 @@ fn deallocate(x: anytype) void {
             x.data.deinit(sxi.allocator);
         },
         sxi.Environment => {
-            x.entries.deinit(sxi.allocator);
+            x.map.deinit(sxi.allocator);
         },
         sxi.Formals => {
             sxi.allocator.free(x.names);
@@ -271,7 +274,7 @@ pub fn make_vector() *sxi.Vector {
 
 pub fn make_environment(parent: ?*sxi.Environment) *sxi.Environment {
     const e = pools.environment.alloc();
-    e.* = .{ .entries = .empty, .parent = parent };
+    e.* = .{ .map = .empty, .parent = parent };
     return e;
 }
 

@@ -592,5 +592,6 @@ pub fn make_root_environment() *sxi.Environment {
         const name, const f = e;
         env.define(gc.make_symbol(name), wrap(f));
     }
+    env.map.reindex(sxi.allocator) catch @panic("make_root_environment");
     return env;
 }
