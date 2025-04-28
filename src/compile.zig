@@ -58,7 +58,7 @@ const CodeBuilder = struct {
     }
 
     fn to_owned(self: *CodeBuilder) CompileError!*sxi.Code {
-        const code = gc.make_code();
+        const code = gc.alloc(.code);
         code.* = .{
             .instructions = try self.code.toOwnedSlice(allocator),
             .literals = try self.literals.toOwnedSlice(allocator),
@@ -316,7 +316,7 @@ fn parse_formals(expr: SXI) CompileError!*sxi.Formals {
         else => return CompileError.SyntaxError,
     }
 
-    const formals = gc.make(.formals);
+    const formals = gc.alloc(.formals);
     formals.* = .{
         .names = try arg_array.toOwnedSlice(allocator),
         .variadic = is_variadic,

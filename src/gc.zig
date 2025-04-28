@@ -256,12 +256,8 @@ pub fn run(extra_roots: []const SXI) void {
 
 // Public allocation functions
 
-pub fn make_pair() *sxi.Pair {
-    return pools.pair.alloc();
-}
-
-pub fn cons(first: SXI, second: SXI) *sxi.Pair {
-    const p = make_pair();
+pub fn make_pair(first: SXI, second: SXI) *sxi.Pair {
+    const p = pools.pair.alloc();
     p.* = .{ .first = first, .second = second };
     return p;
 }
@@ -278,14 +274,6 @@ pub fn make_environment(parent: ?*sxi.Environment) *sxi.Environment {
     return e;
 }
 
-pub fn make_code() *sxi.Code {
-    return make(.code);
-}
-
-pub fn make_lambda() *sxi.Lambda {
-    return pools.lambda.alloc();
-}
-
-pub fn make(comptime tag: sxi.Tag) @FieldType(SXI, @tagName(tag)) {
+pub fn alloc(comptime tag: sxi.Tag) @FieldType(SXI, @tagName(tag)) {
     return @field(pools, @tagName(tag)).alloc();
 }

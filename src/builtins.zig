@@ -336,7 +336,7 @@ fn pair_p(x: SXI) Err!SXI {
 /// scheme: cons (r7rs)
 fn cons(args: []SXI) Err!SXI {
     try check_length(args, 2, 2);
-    return wrap(gc.cons(args[0], args[1]));
+    return sxi.cons(args[0], args[1]);
 }
 
 /// scheme: car (r7rs)
@@ -399,9 +399,7 @@ const ListBuilderFwd = struct {
     }
 
     fn push(self: *ListBuilderFwd, value: SXI) void {
-        const pair = gc.make(.pair);
-        pair.first = value;
-        pair.second = sxi.c_null;
+        const pair = gc.make_pair(value, sxi.c_null);
         self.tail.* = wrap(pair);
         self.tail = &pair.second;
     }
@@ -411,7 +409,7 @@ const ListBuilderRev = struct {
     head: SXI = sxi.c_null,
 
     fn push(self: *ListBuilderRev, value: SXI) void {
-        self.head = wrap(gc.cons(value, self.head));
+        self.head = sxi.cons(value, self.head);
     }
 };
 
@@ -435,7 +433,7 @@ fn make_list(args: []SXI) Err!SXI {
         return Err.InvalidArguments;
     }
     for (0..@intCast(length)) |_| {
-        head = wrap(gc.cons(fill, head));
+        head = sxi.cons(fill, head);
     }
     return head;
 }
@@ -446,7 +444,7 @@ fn list(args: []SXI) Err!SXI {
     var i: usize = args.len;
     while (i > 0) {
         i -= 1;
-        head = wrap(gc.cons(args[i], head));
+        head = sxi.cons(args[i], head);
     }
     return head;
 }

@@ -96,7 +96,7 @@ fn eval_(code_: *sxi.Code, cont_: *sxi.Continuation, env_: Env) Err!SXI {
         },
 
         .allocate_cont => {
-            const next_cont = gc.make(.continuation);
+            const next_cont = gc.alloc(.continuation);
             next_cont.* = .{
                 .code = code,
                 .stack = stack,
@@ -213,7 +213,7 @@ fn eval_(code_: *sxi.Code, cont_: *sxi.Continuation, env_: Env) Err!SXI {
         },
 
         .lambda => {
-            const lambda = gc.make(sxi.Tag.lambda);
+            const lambda = gc.alloc(.lambda);
             lambda.* = .{
                 .capture = env,
                 .arguments = code.literals[ip[1]].formals,
@@ -232,7 +232,7 @@ fn eval_(code_: *sxi.Code, cont_: *sxi.Continuation, env_: Env) Err!SXI {
 }
 
 pub fn evaluate(code: *sxi.Code, env: Env) Err!SXI {
-    const thunk = gc.make(.code);
+    const thunk = gc.alloc(.code);
 
     const exit = try allocator.alloc(OpcodeInt, 1);
     exit[0] = @intFromEnum(Opcode.exit);
@@ -243,7 +243,7 @@ pub fn evaluate(code: *sxi.Code, env: Env) Err!SXI {
         .literals = &.{},
     };
 
-    const cont = gc.make(.continuation);
+    const cont = gc.alloc(.continuation);
     cont.* = .{
         .code = thunk,
         .return_address = @ptrCast(&exit[0]),

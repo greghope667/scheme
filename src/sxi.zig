@@ -87,8 +87,8 @@ pub const Pair = struct {
     }
 };
 
-pub fn pair(first: SXI, second: SXI) Pair {
-    return .{ .first = first, .second = second };
+pub fn cons(first: SXI, second: SXI) SXI {
+    return wrap(gc.make_pair(first, second));
 }
 
 pub const Symbol = extern struct {

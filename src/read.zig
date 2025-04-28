@@ -158,13 +158,13 @@ fn read_value_begins(token: Token) ReadError!SXI {
         .eof => sxi.c_eof,
         .identifier => |sym| SXI{ .symbol = sym },
         .integer => |i| SXI{ .integer = i },
-        .quote => sxi.wrap(gc.cons(
+        .quote => sxi.cons(
             sxi.wrap(symbol_quote),
-            sxi.wrap(gc.cons(
+            sxi.cons(
                 try read_value(),
                 sxi.c_null,
-            )),
-        )),
+            ),
+        ),
         .lparen => read_list(),
         else => ReadError.UnexpectedToken,
     };
@@ -199,7 +199,7 @@ fn read_list() ReadError!SXI {
                 return head;
             },
             else => {
-                var next = gc.cons(
+                var next = gc.make_pair(
                     try read_value_begins(token),
                     sxi.c_null,
                 );
