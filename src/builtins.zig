@@ -17,6 +17,11 @@ const Err = error{
 pub const Function_n = *const fn ([]SXI) Err!SXI;
 pub const Function_1 = *const fn (SXI) Err!SXI;
 
+pub const Function_s = enum {
+    values,
+    apply,
+};
+
 // Helpers for extracting arguments
 const as = sxi.as;
 
@@ -373,7 +378,7 @@ fn null_p(x: SXI) Err!SXI {
 const Listerator = struct {
     expr: SXI,
 
-    fn next(self: *Listerator) error{InvalidArguments}!?SXI {
+    pub fn next(self: *Listerator) error{InvalidArguments}!?SXI {
         return switch (self.expr) {
             .pair => |p| {
                 self.expr = p.second;
@@ -385,7 +390,7 @@ const Listerator = struct {
     }
 };
 
-fn listerate(x: SXI) Listerator {
+pub fn listerate(x: SXI) Listerator {
     return .{ .expr = x };
 }
 
@@ -523,6 +528,12 @@ fn list_copy(l: SXI) Err!SXI {
     return out.head;
 }
 
+// Symbols
+/// scheme: symbol? (r7rs)
+fn symbol_p(x: SXI) Err!SXI {
+    return wrap(x == .symbol);
+}
+
 const exports_f_n = &[_]struct { []const u8, Function_n }{
     .{ "eq?", &eq_p },
     .{ "eqv?", &eqv_p },
@@ -578,6 +589,7 @@ const exports_f_1 = &[_]struct { []const u8, Function_1 }{
     .{ "reverse", &list_reverse },
     .{ "list-reverse", &list_reverse },
     .{ "list-copy", &list_copy },
+    .{ "symbol?", &symbol_p },
 };
 
 pub fn make_root_environment() *sxi.Environment {
@@ -590,6 +602,8 @@ pub fn make_root_environment() *sxi.Environment {
         const name, const f = e;
         env.define(gc.make_symbol(name), wrap(f));
     }
+    env.define(gc.make_symbol("values"), wrap(Function_s.values));
+    env.define(gc.make_symbol("apply"), wrap(Function_s.apply));
     env.map.reindex(sxi.allocator) catch @panic("make_root_environment");
     return env;
 }

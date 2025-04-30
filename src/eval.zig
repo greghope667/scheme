@@ -154,6 +154,29 @@ fn eval_(code_: *sxi.Code, cont_: *sxi.Continuation, env_: Env) Err!SXI {
                     continue :next .ret;
                 },
 
+                .function_s => |f| switch (f) {
+                    .values => {
+                        if (cont.return_address[0] != @intFromEnum(Opcode.push))
+                            return Err.InvalidArguments;
+                        cont.return_address += 1;
+                        const caller_stack = &cont.stack.data;
+                        try caller_stack.ensureTotalCapacityPrecise(allocator, caller_stack.capacity + caller_args.len);
+                        caller_stack.appendSliceAssumeCapacity(caller_args);
+                        continue :next .ret;
+                    },
+
+                    .apply => {
+                        const tail = stack.data.getLast();
+                        _ = stack.data.pop();
+                        _ = stack.data.orderedRemove(0);
+                        var iter = @import("builtins.zig").listerate(tail);
+                        while (try iter.next()) |v| {
+                            try stack.data.append(allocator, v);
+                        }
+                        continue :next .tailcall;
+                    },
+                },
+
                 else => {
                     //std.debug.print("Cannot call: {s}\n", .{@tagName(tag)});
                     return Err.NotCallable;

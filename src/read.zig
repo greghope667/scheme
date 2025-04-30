@@ -41,6 +41,9 @@ const TokenTag = enum {
     dot,
     integer,
     identifier,
+    quasiquote,
+    unquote,
+    unquote_splicing,
 };
 
 const Token = union(TokenTag) {
@@ -52,6 +55,9 @@ const Token = union(TokenTag) {
     dot,
     integer: isize,
     identifier: *sxi.Symbol,
+    quasiquote,
+    unquote,
+    unquote_splicing,
 };
 
 fn isident(ch: u8) bool {
@@ -130,6 +136,17 @@ fn read_token() ReadError!Token {
             '(' => .lparen,
             ')' => .rparen,
             '\'' => .quote,
+            '`' => .quasiquote,
+            ',' => {
+                if (getc()) |chnext| {
+                    if (chnext == '@') {
+                        return .unquote_splicing;
+                    } else {
+                        ungetc(chnext);
+                    }
+                }
+                return .unquote;
+            },
             '#' => read_hash(),
             ' ', '\t', '\r', '\n' => read_token(),
             else => blk: {
@@ -152,19 +169,23 @@ fn read_token() ReadError!Token {
         .eof;
 }
 
+fn read_quote_form(name: *sxi.Symbol) ReadError!SXI {
+    return sxi.cons(
+        sxi.wrap(name),
+        sxi.cons(try read_value(), sxi.c_null),
+    );
+}
+
 fn read_value_begins(token: Token) ReadError!SXI {
     return switch (token) {
         .boolean => |b| if (b) sxi.c_true else sxi.c_false,
         .eof => sxi.c_eof,
         .identifier => |sym| SXI{ .symbol = sym },
         .integer => |i| SXI{ .integer = i },
-        .quote => sxi.cons(
-            sxi.wrap(symbol_quote),
-            sxi.cons(
-                try read_value(),
-                sxi.c_null,
-            ),
-        ),
+        .quote => read_quote_form(symbol_quote),
+        .unquote => read_quote_form(symbol_unquote),
+        .quasiquote => read_quote_form(symbol_quasiquote),
+        .unquote_splicing => read_quote_form(symbol_unquote_splicing),
         .lparen => read_list(),
         else => ReadError.UnexpectedToken,
     };
@@ -192,10 +213,8 @@ fn read_list() ReadError!SXI {
                     return ReadError.UnexpectedToken;
                 }
                 tail.* = try read_value();
-                const end = try read_token();
-                if (!std.meta.eql(end, .rparen)) {
+                if (try read_token() != .rparen)
                     return ReadError.UnexpectedToken;
-                }
                 return head;
             },
             else => {
@@ -215,7 +234,13 @@ pub fn read() ReadError!SXI {
 }
 
 var symbol_quote: *sxi.Symbol = undefined;
+var symbol_quasiquote: *sxi.Symbol = undefined;
+var symbol_unquote: *sxi.Symbol = undefined;
+var symbol_unquote_splicing: *sxi.Symbol = undefined;
 
 pub fn init_read_symbols() void {
     symbol_quote = gc.make_symbol("quote");
+    symbol_quasiquote = gc.make_symbol("quasiquote");
+    symbol_unquote = gc.make_symbol("unquote");
+    symbol_unquote_splicing = gc.make_symbol("unquote-splicing");
 }

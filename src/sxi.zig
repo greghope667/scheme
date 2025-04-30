@@ -28,6 +28,7 @@ pub const Tag = enum(usize) {
     // Callables
     function_1,
     function_n,
+    function_s,
     //kfunction,
     lambda,
     continuation,
@@ -63,6 +64,7 @@ pub const SXI = union(Tag) {
     vector: *Vector,
     function_1: builtins.Function_1,
     function_n: builtins.Function_n,
+    function_s: builtins.Function_s,
     //kfunction,
     lambda: *Lambda,
     continuation: *Continuation,
