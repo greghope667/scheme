@@ -7,11 +7,7 @@ const gc = @import("gc.zig");
 
 const std = @import("std");
 
-const Err = error{
-    InvalidArguments,
-    Overflow,
-    DivideByZero,
-};
+const Err = anyerror;
 
 // Function types.
 pub const Function_n = *const fn ([]SXI) Err!SXI;
@@ -20,6 +16,7 @@ pub const Function_1 = *const fn (SXI) Err!SXI;
 pub const Function_s = enum {
     values,
     apply,
+    current_env,
 };
 
 // Helpers for extracting arguments
@@ -534,6 +531,35 @@ fn symbol_p(x: SXI) Err!SXI {
     return wrap(x == .symbol);
 }
 
+// Output
+/// scheme: display (r7rs)
+fn display(x: SXI) Err!SXI {
+    try @import("print.zig").print(x);
+    return sxi.c_void;
+}
+
+/// scheme: newline (r7rs)
+fn newline(args: []SXI) Err!SXI {
+    try check_length(args, 0, 0);
+    _ = try @import("ports.zig").stdout.write("\n");
+    return sxi.c_void;
+}
+
+// Compilation
+/// scheme: compile (sxi)
+fn compile(args: []SXI) Err!SXI {
+    try check_length(args, 2, 2);
+    const expr = args[0];
+    const env = try as(.environment, args[1]);
+    return wrap(try @import("compile.zig").compile(expr, env));
+}
+
+/// scheme: disassemble (sxi)
+fn disassemble(code: SXI) Err!SXI {
+    try @import("print.zig").disassemble((try as(.lambda, code)).code);
+    return sxi.c_void;
+}
+
 const exports_f_n = &[_]struct { []const u8, Function_n }{
     .{ "eq?", &eq_p },
     .{ "eqv?", &eqv_p },
@@ -563,6 +589,7 @@ const exports_f_n = &[_]struct { []const u8, Function_n }{
     .{ "list-tail", &list_tail },
     .{ "list-ref", &list_ref },
     .{ "list-set!", &list_set },
+    .{ "compile", &compile },
 };
 
 const exports_f_1 = &[_]struct { []const u8, Function_1 }{
@@ -590,20 +617,24 @@ const exports_f_1 = &[_]struct { []const u8, Function_1 }{
     .{ "list-reverse", &list_reverse },
     .{ "list-copy", &list_copy },
     .{ "symbol?", &symbol_p },
+    .{ "display", &display },
+    .{ "disassemble", &disassemble },
+};
+
+const exports_f_s = &[_]struct { []const u8, Function_s }{
+    .{ "apply", .apply },
+    .{ "values", .values },
+    .{ "current-env", .current_env },
 };
 
 pub fn make_root_environment() *sxi.Environment {
     const env = gc.make_environment(null);
-    for (exports_f_1) |e| {
-        const name, const f = e;
-        env.define(gc.make_symbol(name), wrap(f));
+    inline for (.{ exports_f_1, exports_f_n, exports_f_s }) |exports| {
+        for (exports) |e| {
+            const name, const f = e;
+            env.define(gc.make_symbol(name), wrap(f));
+        }
     }
-    for (exports_f_n) |e| {
-        const name, const f = e;
-        env.define(gc.make_symbol(name), wrap(f));
-    }
-    env.define(gc.make_symbol("values"), wrap(Function_s.values));
-    env.define(gc.make_symbol("apply"), wrap(Function_s.apply));
     env.map.reindex(sxi.allocator) catch @panic("make_root_environment");
     return env;
 }

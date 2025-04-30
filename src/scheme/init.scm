@@ -27,6 +27,16 @@
       (map qq-expand1 expr))
     expr))
 
+(define (abs x) (if (< x 0) (- x) x))
+
 (qq-expand1 '`(+ 1 2 ,(+ 3 4)))
 (qq-expand1 '`(a ,(+ 1 2) ,@(map abs '(4 -5 6)) b))
+
+(define (eval expr)
+  ((compile
+     (qq-expand1 expr)
+     (current-env))))
+
+(eval '`(a ,(+ 1 2) ,@(map abs '(4 -5 6)) b))
+
 

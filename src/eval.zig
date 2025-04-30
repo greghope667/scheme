@@ -21,7 +21,8 @@ const EvalError = error{
     Overflow,
     DivideByZero,
 };
-const Err = EvalError;
+//const Err = EvalError;
+const Err = anyerror;
 
 pub const Continuation = struct {
     code: *sxi.Code,
@@ -175,6 +176,13 @@ fn eval_(code_: *sxi.Code, cont_: *sxi.Continuation, env_: Env) Err!SXI {
                         }
                         continue :next .tailcall;
                     },
+
+                    .current_env => {
+                        if (caller_args.len != 0)
+                            return Err.InvalidArguments;
+                        tos = sxi.wrap(env);
+                        continue :next .ret;
+                    },
                 },
 
                 else => {
@@ -246,21 +254,18 @@ fn eval_(code_: *sxi.Code, cont_: *sxi.Continuation, env_: Env) Err!SXI {
             ip += 2;
             continue :next fetch(ip);
         },
-
-        //else => |tag| {
-        //    std.debug.print("Not implemented: {: >4}: {s}\n", .{ ip - @as(IP, @ptrCast(&code.instructions[0])), @tagName(tag) });
-        //    return Err.NotImplemented;
-        //},
     }
 }
 
-pub fn evaluate(code: *sxi.Code, env: Env) Err!SXI {
-    const thunk = gc.alloc(.code);
+pub fn evaluate(code: *sxi.Lambda) Err!SXI {
+    if (code.arguments.names.len > 0)
+        return Err.InvalidArguments;
 
     const exit = try allocator.alloc(OpcodeInt, 1);
     exit[0] = @intFromEnum(Opcode.exit);
 
-    thunk.* = .{
+    const exit_thunk = gc.alloc(.code);
+    exit_thunk.* = .{
         .instructions = exit,
         .symbols = &.{},
         .literals = &.{},
@@ -268,14 +273,14 @@ pub fn evaluate(code: *sxi.Code, env: Env) Err!SXI {
 
     const cont = gc.alloc(.continuation);
     cont.* = .{
-        .code = thunk,
+        .code = exit_thunk,
         .return_address = @ptrCast(&exit[0]),
         .stack = gc.make_vector(),
         .stack_used = 0,
         .stack_limit = 0,
-        .environment = env,
+        .environment = code.capture,
         .next = cont,
     };
 
-    return @call(.never_inline, eval_, .{ code, cont, env });
+    return @call(.never_inline, eval_, .{ code.code, cont, code.capture });
 }

@@ -2,6 +2,9 @@
 const sxi = @import("sxi.zig");
 const std = @import("std");
 
+const stdout = @import("ports.zig").stdout;
+const writer = stdout.writer();
+
 pub fn panic(message: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
     std.io.getStdErr().writeAll("\nPanic:\n") catch {};
     std.io.getStdErr().writeAll(message) catch {};
@@ -16,10 +19,11 @@ pub fn main() !void {
     sxi.gc.protect(sxi.wrap(env));
 
     while (true) {
-        try std.io.getStdOut().writeAll("\n> ");
+        try std.io.getStdOut().writeAll("> ");
+        try stdout.flush();
 
         const s = sxi.read() catch |err| {
-            try std.io.getStdOut().writer().print("Read Error: {any}\n", .{err});
+            try writer.print("Read Error: {any}\n", .{err});
             continue;
         };
 
@@ -27,23 +31,23 @@ pub fn main() !void {
             return;
         }
 
-        if (!s.eq(sxi.c_void)) {
-            try sxi.print(s);
-            try std.io.getStdOut().writeAll("\n");
-        }
+        try writer.writeAll("read: ");
+        try sxi.print(s);
+        try writer.writeByte('\n');
 
-        const code = sxi.compile(s) catch |err| {
-            try std.io.getStdErr().writer().print("Compile Error: {any}\n", .{err});
+        const code = sxi.compile(s, env) catch |err| {
+            try writer.print("Compile Error: {any}\n", .{err});
             continue;
         };
 
-        try @import("print.zig").print_code(code);
+        try @import("print.zig").disassemble(code.code);
 
-        const ret = sxi.evaluate(code, env) catch |err| {
-            try std.io.getStdErr().writer().print("Eval Error: {any}\n", .{err});
+        const ret = sxi.evaluate(code) catch |err| {
+            try writer.print("Eval Error: {any}\n", .{err});
             continue;
         };
 
         try sxi.print(ret);
+        try writer.writeByte('\n');
     }
 }

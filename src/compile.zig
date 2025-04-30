@@ -220,12 +220,24 @@ fn compile_symbol(sym: *sxi.Symbol, code: *CodeBuilder, is_tail: bool) CompileEr
     }
 }
 
-pub fn compile(expr: SXI) CompileError!*sxi.Code {
+fn compile_to_code(expr: SXI) CompileError!*sxi.Code {
     _ = arena.reset(.retain_capacity);
     var code: CodeBuilder = .empty;
     errdefer code.deinit();
     try compile_expr(expr, &code, true);
     return code.to_owned();
+}
+
+pub fn compile(expr: SXI, env: *sxi.Environment) CompileError!*sxi.Lambda {
+    const code = try compile_to_code(expr);
+
+    const args = gc.alloc(.formals);
+    args.* = .{ .names = &.{}, .variadic = false };
+
+    const thunk = gc.alloc(.lambda);
+    thunk.* = .{ .code = code, .arguments = args, .capture = env };
+
+    return thunk;
 }
 
 const SpecialForm = struct {

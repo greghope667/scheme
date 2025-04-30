@@ -65,12 +65,11 @@ fn print_value(value: SXI) Error!void {
 
 pub fn print(value: SXI) Error!void {
     try print_value(value);
-    try stdout.flush();
 }
 
-pub fn print_code(c: *sxi.Code) Error!void {
+pub fn disassemble(c: *sxi.Code) Error!void {
     var ip: usize = 0;
-    try writer.print("CODE (len {})\n", .{c.instructions.len});
+    try writer.print("CODE (len {}) {*}\n", .{ c.instructions.len, c });
     while (ip < c.instructions.len) {
         const op: sxi.Opcode = @enumFromInt(c.instructions[ip]);
         try writer.print("{: >8}:   {s: <24}", .{ ip, @tagName(op) });
@@ -105,5 +104,11 @@ pub fn print_code(c: *sxi.Code) Error!void {
         }
         try writer.writeByte('\n');
     }
-    try stdout.flush();
+    try writer.writeByte('\n');
+
+    for (c.literals) |l| {
+        if (l == .code) {
+            try disassemble(l.code);
+        }
+    }
 }
