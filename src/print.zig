@@ -49,6 +49,24 @@ fn print_vector(v: *sxi.Vector) Error!void {
     try writer.writeByte(')');
 }
 
+fn print_struct(s: *sxi.StructInstance) Error!void {
+    try writer.print("#<struct {s}", .{s.typ.name.data()});
+    for (s.typ.fieldnames, s.fields) |name, value| {
+        try writer.print(" {s}:", .{name.data()});
+        try print_value(value);
+    }
+    try writer.writeByte('>');
+}
+
+fn print_formals(f: *sxi.Formals) Error!void {
+    try writer.writeAll("#<formals(");
+    for (f.names[0 .. f.names.len - 1]) |name|
+        try writer.print("{s} ", .{name.data()});
+    if (f.variadic)
+        try writer.writeAll(". ");
+    try writer.print("{s})>", .{f.names[f.names.len - 1].data()});
+}
+
 fn print_value(value: SXI) Error!void {
     try switch (value) {
         .constant => |c| print_constant(c),
@@ -56,6 +74,8 @@ fn print_value(value: SXI) Error!void {
         .pair => |p| print_pair(p),
         .symbol => |s| writer.writeAll(s.data()),
         .vector => |v| print_vector(v),
+        .struct_instance => |s| print_struct(s),
+        .formals => |f| print_formals(f),
         inline else => |ptr, tag| switch (@typeInfo(@TypeOf(ptr))) {
             .pointer => writer.print("#<" ++ @tagName(tag) ++ " {*}>", .{ptr}),
             else => writer.writeAll("#<" ++ @tagName(tag) ++ ">"),
@@ -87,7 +107,7 @@ pub fn disassemble(c: *sxi.Code) Error!void {
                 try print_value(literal);
                 ip += 2;
             },
-            .lookup_callable, .lookup_variable, .define => {
+            .lookup, .define, .set => {
                 const symbol = c.symbols[c.instructions[ip + 1]];
                 try writer.writeAll(symbol.data());
                 ip += 2;

@@ -34,41 +34,40 @@ pub const Continuation = struct {
     next: *Continuation,
 };
 
-//pub const Opcode = enum(OI) {
-//    0 allocate_stack,
-//    1 lookup_callable,
-//    2 lookup_variable,
-//    3 call,
-//    4 tailcall,
-//    5 literal,
-//    6 ret,
-//    7 branch,
-//    8 branch0,
-//    9 push,
-//   10 define,
-//   11 exit,
-//   12 lambda,
-//   13 push_callable,
-//};
-
 inline fn fetch(ip: IP) Opcode {
     //std.debug.print("{*} {}\n", .{ ip, ip[0] });
     return @enumFromInt(ip[0]);
 }
 
 fn bind_lambda(l: *sxi.Lambda, args: []SXI) Err!Env {
-    if (l.arguments.names.len != args.len) {
-        return Err.InvalidArguments;
+    var len = l.arguments.names.len;
+    var extra: SXI = sxi.c_null;
+
+    if (l.arguments.variadic) {
+        if (len - 1 > args.len)
+            return Err.InvalidArguments;
+        len -= 1;
+        var i: usize = args.len - len;
+        while (i > 0) {
+            i -= 1;
+            extra = sxi.cons(args[i + len], extra);
+        }
+    } else {
+        if (len != args.len)
+            return Err.InvalidArguments;
     }
 
     const env = gc.make_environment(l.capture);
-    //try env.entries.resize(allocator, args.len);
-    env.map.items = try allocator.alloc(sxi.Environment.Entry, args.len);
-    env.map.capacity = @intCast(args.len);
+    env.map.items = try allocator.alloc(sxi.Environment.Entry, l.arguments.names.len);
+    env.map.capacity = @intCast(l.arguments.names.len);
 
-    for (env.map.items, 0..) |*entry, i| {
+    for (env.map.items[0..len], 0..) |*entry, i| {
         entry.* = .{ .key = l.arguments.names[i], .value = args[i] };
     }
+
+    if (l.arguments.variadic)
+        env.map.items[len] = .{ .key = l.arguments.names[len], .value = extra };
+
     return env;
 }
 
@@ -185,6 +184,15 @@ fn eval_(code_: *sxi.Code, cont_: *sxi.Continuation, env_: Env) Err!SXI {
                     },
                 },
 
+                .thunk => |f| {
+                    if (caller_args.len > 0)
+                        return Err.InvalidArguments;
+                    env = f.env;
+                    code = f.code;
+                    ip = @ptrCast(&code.instructions[0]);
+                    continue :next fetch(ip);
+                },
+
                 else => {
                     //std.debug.print("Cannot call: {s}\n", .{@tagName(tag)});
                     return Err.NotCallable;
@@ -208,27 +216,23 @@ fn eval_(code_: *sxi.Code, cont_: *sxi.Continuation, env_: Env) Err!SXI {
             return tos;
         },
 
-        .lookup_variable => {
+        .lookup => {
             tos = env.lookup(code.symbols[ip[1]]) orelse {
-                //std.debug.print("Not defined: {s}\n", .{code.symbols[ip[1]].data()});
+                std.debug.print("Not defined: {s}\n", .{code.symbols[ip[1]].data()});
                 return Err.NotDefined;
             };
-            ip += 2;
-            continue :next fetch(ip);
-        },
-
-        .lookup_callable => {
-            tos = env.lookup(code.symbols[ip[1]]) orelse {
-                //std.debug.print("Not defined: {s}\n", .{code.symbols[ip[1]].data()});
-                return Err.NotDefined;
-            };
-            stack.data.appendAssumeCapacity(tos);
             ip += 2;
             continue :next fetch(ip);
         },
 
         .define => {
             env.define(code.symbols[ip[1]], tos);
+            ip += 2;
+            continue :next fetch(ip);
+        },
+
+        .set => {
+            try env.set(code.symbols[ip[1]], tos);
             ip += 2;
             continue :next fetch(ip);
         },
@@ -257,10 +261,7 @@ fn eval_(code_: *sxi.Code, cont_: *sxi.Continuation, env_: Env) Err!SXI {
     }
 }
 
-pub fn evaluate(code: *sxi.Lambda) Err!SXI {
-    if (code.arguments.names.len > 0)
-        return Err.InvalidArguments;
-
+pub fn evaluate(code: *sxi.Thunk) Err!SXI {
     const exit = try allocator.alloc(OpcodeInt, 1);
     exit[0] = @intFromEnum(Opcode.exit);
 
@@ -278,9 +279,9 @@ pub fn evaluate(code: *sxi.Lambda) Err!SXI {
         .stack = gc.make_vector(),
         .stack_used = 0,
         .stack_limit = 0,
-        .environment = code.capture,
+        .environment = code.env,
         .next = cont,
     };
 
-    return @call(.never_inline, eval_, .{ code.code, cont, code.capture });
+    return @call(.never_inline, eval_, .{ code.code, cont, code.env });
 }

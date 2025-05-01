@@ -149,6 +149,12 @@ fn read_token() ReadError!Token {
             },
             '#' => read_hash(),
             ' ', '\t', '\r', '\n' => read_token(),
+            ';' => {
+                while (getc()) |ch2| {
+                    if (ch2 == '\n')
+                        return read_token();
+                } else return .eof;
+            },
             else => blk: {
                 if (!isident(ch)) {
                     return ReadError.UnexpectedCharacter;

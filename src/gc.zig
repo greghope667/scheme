@@ -161,13 +161,6 @@ fn cleanup() void {
     }
     allocation_counter = 0;
 }
-// x x   pair: *Pair,
-// x x x environment: *Environment,
-// x x x vector: *Vector,
-// x x   lambda: *Lambda,
-// x x   continuation: *Continuation,
-// x   x formals: *Formals,
-// x x x code: *Code,
 
 const Pools = struct {
     pair: ObjectPool(sxi.Pair) = .empty,
@@ -177,6 +170,9 @@ const Pools = struct {
     code: ObjectPool(sxi.Code) = .empty,
     formals: ObjectPool(sxi.Formals) = .empty,
     continuation: ObjectPool(sxi.Continuation) = .empty,
+    struct_type: ObjectPool(sxi.StructType) = .empty,
+    struct_instance: ObjectPool(sxi.StructInstance) = .empty,
+    thunk: ObjectPool(sxi.Thunk) = .empty,
 };
 var pools: Pools = .{};
 
@@ -214,6 +210,16 @@ fn sweepChildren(x: anytype) void {
             sweep(sxi.wrap(x.environment));
             sweep(sxi.wrap(x.next));
         },
+        sxi.StructInstance => {
+            sweep(sxi.wrap(x.typ));
+            for (x.fields) |f| {
+                sweep(f);
+            }
+        },
+        sxi.Thunk => {
+            sweep(sxi.wrap(x.code));
+            sweep(sxi.wrap(x.env));
+        },
         else => {},
     }
 }
@@ -233,6 +239,12 @@ fn deallocate(x: anytype) void {
             sxi.allocator.free(x.instructions);
             sxi.allocator.free(x.symbols);
             sxi.allocator.free(x.literals);
+        },
+        sxi.StructType => {
+            sxi.allocator.free(x.fieldnames);
+        },
+        sxi.StructInstance => {
+            sxi.allocator.free(x.fields);
         },
         else => {},
     }

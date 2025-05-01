@@ -24,6 +24,8 @@ pub const Tag = enum(usize) {
     pair,
     environment,
     vector,
+    struct_type,
+    struct_instance,
 
     // Callables
     function_1,
@@ -32,6 +34,7 @@ pub const Tag = enum(usize) {
     //kfunction,
     lambda,
     continuation,
+    thunk,
 
     // Internals
     formals,
@@ -62,12 +65,14 @@ pub const SXI = union(Tag) {
     pair: *Pair,
     environment: *Environment,
     vector: *Vector,
+    struct_type: *StructType,
+    struct_instance: *StructInstance,
     function_1: builtins.Function_1,
     function_n: builtins.Function_n,
     function_s: builtins.Function_s,
-    //kfunction,
     lambda: *Lambda,
     continuation: *Continuation,
+    thunk: *Thunk,
 
     formals: *Formals,
     code: *Code,
@@ -148,7 +153,7 @@ pub const Environment = struct {
         if (e.parent) |parent| {
             return parent.set(name, value);
         } else {
-            return .NotDefined;
+            return SetError.NotDefined;
         }
     }
 
@@ -199,6 +204,21 @@ pub fn wrap(x: anytype) SXI {
     };
     return @unionInit(SXI, fieldname, x);
 }
+
+pub const StructType = struct {
+    name: *Symbol,
+    fieldnames: []*Symbol,
+};
+
+pub const StructInstance = struct {
+    typ: *StructType,
+    fields: []SXI,
+};
+
+pub const Thunk = struct {
+    env: *Environment,
+    code: *Code,
+};
 
 fn as_type(comptime tag: Tag) type {
     return @FieldType(SXI, @tagName(tag));

@@ -5,12 +5,12 @@ const std = @import("std");
 const stdout = @import("ports.zig").stdout;
 const writer = stdout.writer();
 
-pub fn panic(message: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
-    std.io.getStdErr().writeAll("\nPanic:\n") catch {};
-    std.io.getStdErr().writeAll(message) catch {};
-    std.process.exit(1);
-    while (true) {}
-}
+//pub fn panic(message: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
+//    std.io.getStdErr().writeAll("\nPanic:\n") catch {};
+//    std.io.getStdErr().writeAll(message) catch {};
+//    std.process.exit(1);
+//    while (true) {}
+//}
 
 pub fn main() !void {
     sxi.init();
@@ -40,7 +40,7 @@ pub fn main() !void {
             continue;
         };
 
-        try @import("print.zig").disassemble(code.code);
+        //try @import("print.zig").disassemble(code.code);
 
         const ret = sxi.evaluate(code) catch |err| {
             try writer.print("Eval Error: {any}\n", .{err});

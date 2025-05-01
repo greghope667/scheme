@@ -99,7 +99,8 @@ pub fn HashMap(K: type, V: type, comptime hash_fn: anytype, comptime eql_fn: any
 
         pub fn deinit(self: *Self, allocator: Allocator) void {
             self.delete_index(allocator);
-            allocator.free(self.memory());
+            if (self.capacity > 0)
+                allocator.free(self.memory());
         }
 
         pub fn reserve(self: *Self, allocator: Allocator, size: u32) error{OutOfMemory}!void {

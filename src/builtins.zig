@@ -43,6 +43,11 @@ fn check_length(args: []const SXI, min: usize, max: usize) Err!void {
     return if (min <= args.len and args.len <= max) {} else Err.InvalidArguments;
 }
 
+fn check_bounds(T: type, arr: []T, i: isize) Err!usize {
+    const u: usize = @bitCast(i);
+    return if (0 <= i and u < arr.len) u else Err.OutOfBounds;
+}
+
 // Equivalence procedures
 
 /// scheme: eq? (r7rs)
@@ -252,7 +257,7 @@ fn sub2(x: isize, y: SXI) Err!isize {
 /// scheme: abs (r7rs)
 fn abs(x: SXI) Err!SXI {
     const i = try as_int(x);
-    return if (i == min_int) Err.Overflow else wrap(-i);
+    return if (i == min_int) Err.Overflow else wrap(if (i < 0) -i else i);
 }
 
 fn div_args(args: []SXI) Err!struct { isize, isize } {
@@ -556,8 +561,78 @@ fn compile(args: []SXI) Err!SXI {
 
 /// scheme: disassemble (sxi)
 fn disassemble(code: SXI) Err!SXI {
-    try @import("print.zig").disassemble((try as(.lambda, code)).code);
+    try @import("print.zig").disassemble(try switch (code) {
+        .lambda => |l| l.code,
+        .thunk => |t| t.code,
+        else => Err.InvalidArguments,
+    });
     return sxi.c_void;
+}
+
+// Structs
+// (these are all specific to this implementation, used to implement define-record)
+/// scheme: make-struct-type (sxi)
+fn make_struct_type(args: []SXI) Err!SXI {
+    if (args.len == 0)
+        return Err.InvalidArguments;
+
+    const name = try as(.symbol, args[0]);
+
+    const fieldnames = try sxi.allocator.alloc(*sxi.Symbol, args.len - 1);
+    errdefer sxi.allocator.free(fieldnames);
+
+    for (args[1..], 0..) |a, i| {
+        fieldnames[i] = try as(.symbol, a);
+    }
+
+    const t = gc.alloc(.struct_type);
+    t.* = .{ .name = name, .fieldnames = fieldnames };
+    return wrap(t);
+}
+
+fn make_struct(args: []SXI) Err!SXI {
+    if (args.len == 0)
+        return Err.InvalidArguments;
+
+    const typ = try as(.struct_type, args[0]);
+
+    if (args.len - 1 != typ.fieldnames.len)
+        return Err.InvalidArguments;
+
+    const fields = try sxi.allocator.alloc(SXI, typ.fieldnames.len);
+    @memcpy(fields, args[1..]);
+
+    const s = gc.alloc(.struct_instance);
+    s.* = .{ .typ = typ, .fields = fields };
+    return wrap(s);
+}
+
+fn struct_type(x: SXI) Err!SXI {
+    return if (x == .struct_instance) wrap(x.struct_instance.typ) else wrap(false);
+}
+
+fn struct_ref(args: []SXI) Err!SXI {
+    try check_length(args, 2, 2);
+    const fields = (try as(.struct_instance, args[0])).fields;
+    const index = try as_int(args[1]);
+    return fields[try check_bounds(SXI, fields, index)];
+}
+
+fn struct_set(args: []SXI) Err!SXI {
+    try check_length(args, 3, 3);
+    const fields = (try as(.struct_instance, args[0])).fields;
+    const index = try as_int(args[1]);
+    fields[try check_bounds(SXI, fields, index)] = args[2];
+    return args[0];
+}
+
+// Environments
+fn env_ref(args: []SXI) Err!SXI {
+    try check_length(args, 2, 3);
+    const env = try as(.environment, args[0]);
+    const name = try as(.symbol, args[1]);
+    const default = if (args.len == 2) Err.NotDefined else args[2];
+    return env.lookup(name) orelse default;
 }
 
 const exports_f_n = &[_]struct { []const u8, Function_n }{
@@ -590,6 +665,12 @@ const exports_f_n = &[_]struct { []const u8, Function_n }{
     .{ "list-ref", &list_ref },
     .{ "list-set!", &list_set },
     .{ "compile", &compile },
+    .{ "make-struct-type", &make_struct_type },
+    .{ "make-struct", &make_struct },
+    .{ "struct-ref", &struct_ref },
+    .{ "struct-set!", &struct_set },
+    .{ "env-ref", &env_ref },
+    .{ "newline", &newline },
 };
 
 const exports_f_1 = &[_]struct { []const u8, Function_1 }{
@@ -619,6 +700,7 @@ const exports_f_1 = &[_]struct { []const u8, Function_1 }{
     .{ "symbol?", &symbol_p },
     .{ "display", &display },
     .{ "disassemble", &disassemble },
+    .{ "struct-type", &struct_type },
 };
 
 const exports_f_s = &[_]struct { []const u8, Function_s }{

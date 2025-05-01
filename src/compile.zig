@@ -12,8 +12,7 @@ var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 
 pub const Opcode = enum(OI) {
     allocate_stack,
-    lookup_callable,
-    lookup_variable,
+    lookup,
     call,
     tailcall,
     literal,
@@ -22,6 +21,7 @@ pub const Opcode = enum(OI) {
     branch0,
     push,
     define,
+    set,
     exit,
     lambda,
     push_callable,
@@ -182,23 +182,13 @@ fn compile_list(list: []SXI, code: *CodeBuilder, is_tail: bool) CompileError!voi
     }
     try code.append(.{ Opcode.allocate_stack, list.len });
 
-    try switch (list[0]) {
-        .pair => |p| {
-            try compile_list(try flatten_list(p), code, false);
-            try code.append_opc(Opcode.push_callable);
-        },
-        .symbol => |s| code.append(.{ Opcode.lookup_callable, s }),
-        .function_1, .function_n, .lambda => code.append(.{ Opcode.literal, list[0], Opcode.push }),
-        else => return CompileError.ValueNotCallable,
-    };
-
-    for (list[1..]) |expr| {
+    for (list) |expr| {
         try switch (expr) {
             .pair => |p| {
                 try compile_list(try flatten_list(p), code, false);
                 try code.append_opc(Opcode.push);
             },
-            .symbol => |s| code.append(.{ Opcode.lookup_variable, s, Opcode.push }),
+            .symbol => |s| code.append(.{ Opcode.lookup, s, Opcode.push }),
             else => code.append(.{ Opcode.literal, expr, Opcode.push }),
         };
     }
@@ -214,7 +204,7 @@ fn compile_literal(value: SXI, code: *CodeBuilder, is_tail: bool) CompileError!v
 }
 
 fn compile_symbol(sym: *sxi.Symbol, code: *CodeBuilder, is_tail: bool) CompileError!void {
-    try code.append(.{ Opcode.lookup_variable, sym });
+    try code.append(.{ Opcode.lookup, sym });
     if (is_tail) {
         try code.append_opc(Opcode.ret);
     }
@@ -228,15 +218,10 @@ fn compile_to_code(expr: SXI) CompileError!*sxi.Code {
     return code.to_owned();
 }
 
-pub fn compile(expr: SXI, env: *sxi.Environment) CompileError!*sxi.Lambda {
+pub fn compile(expr: SXI, env: *sxi.Environment) CompileError!*sxi.Thunk {
     const code = try compile_to_code(expr);
-
-    const args = gc.alloc(.formals);
-    args.* = .{ .names = &.{}, .variadic = false };
-
-    const thunk = gc.alloc(.lambda);
-    thunk.* = .{ .code = code, .arguments = args, .capture = env };
-
+    const thunk = gc.alloc(.thunk);
+    thunk.* = .{ .code = code, .env = env };
     return thunk;
 }
 
@@ -293,6 +278,22 @@ fn compile_define(form: []SXI, code: *CodeBuilder, is_tail: bool) CompileError!v
 
     switch (name) {
         .symbol => |s| try code.append(.{ Opcode.define, s }),
+        else => return CompileError.SyntaxError,
+    }
+
+    if (is_tail) {
+        try code.append_opc(Opcode.ret);
+    }
+}
+
+fn compile_set(form: []SXI, code: *CodeBuilder, is_tail: bool) CompileError!void {
+    if (form.len != 3)
+        return CompileError.SyntaxError;
+
+    try compile_expr(form[2], code, false);
+
+    switch (form[1]) {
+        .symbol => |s| try code.append(.{ Opcode.set, s }),
         else => return CompileError.SyntaxError,
     }
 
@@ -376,6 +377,7 @@ fn compile_quote(form: []SXI, code: *CodeBuilder, is_tail: bool) CompileError!vo
 var special_forms = [_]SpecialForm{
     .{ .name = "if", .symbol = undefined, .func = compile_if },
     .{ .name = "define", .symbol = undefined, .func = compile_define },
+    .{ .name = "set!", .symbol = undefined, .func = compile_set },
     .{ .name = "lambda", .symbol = undefined, .func = compile_lambda },
     .{ .name = "begin", .symbol = undefined, .func = compile_begin },
     .{ .name = "quote", .symbol = undefined, .func = compile_quote },
