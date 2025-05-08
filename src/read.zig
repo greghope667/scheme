@@ -1,15 +1,13 @@
 const sxi = @import("sxi.zig");
 const SXI = sxi.SXI;
 const gc = @import("gc.zig");
+const ports = @import("ports.zig");
 
 const std = @import("std");
 const assert = std.debug.assert;
 
+pub var input_port: *ports.Port = ports.stdin;
 var ungetc_buf: ?u8 = null;
-// var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-var input_buffer: [4096]u8 = undefined;
-var input_begin: usize = 0;
-var input_end: usize = 0;
 
 // Read from stdin, returns null on EOF
 // (panics on other errors)
@@ -19,7 +17,7 @@ fn getc() ?u8 {
         return ch;
     } else {
         var ch: u8 = undefined;
-        const n = @import("ports.zig").stdin.read((&ch)[0..1]) catch @panic("read error");
+        const n = input_port.read((&ch)[0..1]) catch @panic("read error");
         return if (n > 0) ch else null;
     }
 }
@@ -133,8 +131,8 @@ fn read_token() ReadError!Token {
 
     return if (getc()) |ch|
         switch (ch) {
-            '(' => .lparen,
-            ')' => .rparen,
+            '(', '[' => .lparen,
+            ')', ']' => .rparen,
             '\'' => .quote,
             '`' => .quasiquote,
             ',' => {

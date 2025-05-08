@@ -38,6 +38,9 @@
 (define (assoc key alist cmp)
   (find (lambda (p) (cmp (car p) key)) alist))
 
+(define (memq key ls)
+  (find-tail (lambda (v) (eq? key v)) ls))
+
 (define (qq-expand-term t)
   (if (symbol? t)
     (list 'quote t)
@@ -47,19 +50,19 @@
 
 (define (qq-expand-list ls)
   (define head (car ls))
-  (if (eq? head 'quote)
-    ls
-    (if (eq? head 'unquote)
-      (cons 'values (cdr ls))
-      (if (eq? head 'unquote-splicing)
-        (cons 'apply (cons 'values (cdr ls)))
-        (cons 'list (map qq-expand-term ls))))))
+  (if (eq? head 'unquote)
+    (cons 'values (cdr ls))
+    (if (eq? head 'unquote-splicing)
+      (cons 'apply (cons 'values (cdr ls)))
+      (cons 'list (map qq-expand-term ls)))))
 
 (define (qq-expand expr)
   (if (pair? expr)
     (if (eq? (car expr) 'quasiquote)
       (qq-expand-term (car (cdr expr)))
-      (map qq-expand expr))
+      (if (eq? (car expr) 'quote)
+        expr
+        (map qq-expand expr)))
     expr))
 
 ;;; ~~ Identifiers ~~
@@ -152,16 +155,20 @@
     expr))
 
 (define (new-bindings args current) 
-  (append (map (lambda (s) (cons s (gensym))) args) current))
+  (define (rename s) (if (= (identifier-scope s) 0) (identifier-symbol s) (gensym)))
+  (append (map (lambda (s) (cons s (rename s))) args) current))
 
 (define (unstamp-identifier id bindings)
+  (define sym (identifier-symbol id))
   (if (= (identifier-scope id) 0)
-    (identifier-symbol id)
-    (begin
-      (define gensym-name (assoc id bindings bound-identifier=?))
-      (if gensym-name
-        (cdr gensym-name)
-        (list 'env-ref (cdr (assv (struct-ref (car expr) 1) envs)) (struct-ref id 0))))))
+    sym
+    (if (memq sym '(if define set! begin lambda))
+      sym
+      (begin
+        (define gensym-name (assoc id bindings bound-identifier=?))
+        (if gensym-name
+          (cdr gensym-name)
+          (list 'env-ref (cdr (assv (identifier-scope id) envs)) (identifier-symbol id)))))))
 
 (define (unstamp expr bindings)
   (if (form? expr 'lambda)
@@ -188,7 +195,8 @@
 (define gensym
   ;; Massive hack for testing right now
   (begin
-    (define pool '(g0 g1 g2 g3 g4 g5 g6 g7))
+    (define pool '(g0 g1 g2 g3 g4 g5 g6 g7
+                   g8 g9 ga gb gc gd ge gf))
     (lambda ()
       (define s (car pool))
       (set! pool (cdr pool))
@@ -209,34 +217,11 @@
       (f expr inject symbol-identifier=?)
       macro-env)))
 
-(define let1t (ir-macro-transformer
-               (lambda (expr inject compare)
-                 (define sym (cadr expr))
-                 (define value (caddr expr))
-                 (define body (cdddr expr))
-                 (list (list 'lambda (list sym) (apply values body)) value))))
-
-(define let1 (make-struct macro let1t (current-env)))
-
-(define ort (er-macro-transformer
-              (lambda (expr rename compare)
-                (define first (cadr expr))
-                (define rest (cddr expr))
-                (define x (rename 'x))
-                (if (null? rest)
-                  first
-                  (list 'let1 x first (list 'if x x (cons 'or rest)))))))
-
-(define or (make-struct macro ort (current-env)))
-
-(macroexpand source (current-env))
-(macroexpand 'a (current-env))
-(macroexpand '(or (a) (b) (c)) (current-env))
-
 (define (eval expr env)
-  ((compile (macroexpand (qq-expand expr) env) env)))
-
-(eval
-  '(or (> 2 3) 10)
-  (current-env))
+  (print 'eval: expr)
+  (if (form? expr 'define-syntax)
+    (eval (list 'define 
+                (cadr expr)
+                (list make-struct macro (caddr expr) env)) env)
+    ((compile (macroexpand (qq-expand expr) env) env))))
 

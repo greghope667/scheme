@@ -94,8 +94,8 @@ pub const Pair = struct {
     }
 };
 
-pub fn cons(first: SXI, second: SXI) SXI {
-    return wrap(gc.make_pair(first, second));
+pub fn cons(first: anytype, second: anytype) SXI {
+    return wrap(gc.make_pair(wrap(first), wrap(second)));
 }
 
 pub const Symbol = extern struct {
@@ -187,8 +187,14 @@ pub const Lambda = struct {
     code: *Code,
 };
 
-pub fn wrap(x: anytype) SXI {
+pub inline fn wrap(x: anytype) SXI {
     switch (@TypeOf(x)) {
+        @TypeOf(null) => {
+            return c_null;
+        },
+        SXI => {
+            return x;
+        },
         bool => {
             return if (x) c_true else c_false;
         },
@@ -228,8 +234,4 @@ pub fn as(comptime tag: Tag, x: SXI) error{InvalidArguments}!@FieldType(SXI, @ta
     return if (x == tag) @field(x, @tagName(tag)) else error.InvalidArguments;
 }
 
-pub fn init() void {
-    @import("ports.zig").init_port_handles();
-    @import("read.zig").init_read_symbols();
-    @import("compile.zig").init_compile_symbols();
-}
+pub const init = @import("init.zig").init;

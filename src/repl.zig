@@ -1,5 +1,7 @@
 //const SXI = @import("sxi.zig").SXI;
 const sxi = @import("sxi.zig");
+const gc = sxi.gc;
+const cons = sxi.cons;
 const std = @import("std");
 
 const stdout = @import("ports.zig").stdout;
@@ -13,10 +15,11 @@ const writer = stdout.writer();
 //}
 
 pub fn main() !void {
-    sxi.init();
-    //const env = sxi.gc.make_environment(null);
-    const env = @import("builtins.zig").make_root_environment();
+    const env = try sxi.init();
     sxi.gc.protect(sxi.wrap(env));
+
+    const eval = gc.make_symbol("eval");
+    const quote = gc.make_symbol("quote");
 
     while (true) {
         try std.io.getStdOut().writeAll("> ");
@@ -35,12 +38,18 @@ pub fn main() !void {
         try sxi.print(s);
         try writer.writeByte('\n');
 
-        const code = sxi.compile(s, env) catch |err| {
+        const expr = cons(
+            eval,
+            cons(
+                cons(quote, cons(s, null)),
+                cons(env, null),
+            ),
+        );
+
+        const code = sxi.compile(expr, env) catch |err| {
             try writer.print("Compile Error: {any}\n", .{err});
             continue;
         };
-
-        //try @import("print.zig").disassemble(code.code);
 
         const ret = sxi.evaluate(code) catch |err| {
             try writer.print("Eval Error: {any}\n", .{err});

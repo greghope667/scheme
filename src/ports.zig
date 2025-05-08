@@ -208,3 +208,29 @@ pub fn init_port_handles() void {
     stderr_file.file = std.io.getStdErr();
     stdin_file.file = std.io.getStdIn();
 }
+
+const StringLiteralPort = struct {
+    port: Port,
+
+    fn read(_: *Port, _: []u8) ReadError!usize {
+        return 0;
+    }
+
+    fn free(p: *Port, allocator: Allocator) void {
+        const self: *StringLiteralPort = @fieldParentPtr("port", p);
+        allocator.destroy(self);
+    }
+
+    const vtbl: Vtbl = .{
+        .read = &read,
+        .free = &free,
+    };
+};
+
+pub fn string_literal_port(literal: []const u8) Port {
+    return .{
+        .input_buffer = @constCast(literal),
+        .input_end = @intCast(literal.len),
+        .vtbl = &StringLiteralPort.vtbl,
+    };
+}
